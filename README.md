@@ -21,20 +21,6 @@ Key features
 - Probability calibration to a 300–940 NovaScore with clear decision bands
 - Simple fairness audit using delta TPR across city groups
 
-Repository structure
-.
-├── README.md
-├── LICENSE
-├── requirements.txt
-├── .gitignore
-├── data/
-│   ├── raw/                  (place parquet inputs here; ignored)
-│   └── processed/            (intermediate artifacts; ignored)
-├── notebooks/                (optional notebooks)
-├── src/                      (optional utility modules if you split code later)
-├── assets/                   (images/diagrams for docs)
-└── docs/                     (extra documentation)
-
 Input data
 The pipeline expects two parquet files uploaded at runtime:
 - merged_trip_details_0.parquet
