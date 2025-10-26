@@ -1,0 +1,12 @@
+pandas==2.2.2
+pyarrow
+tqdm
+scikit-learn
+lightgbm
+torch
+torchvision
+torchaudio
+networkx
+node2vec
+gensim
+numpy

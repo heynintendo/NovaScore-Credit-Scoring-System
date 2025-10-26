@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+*.log
+*.sqlite
+*.db
+
+# Virtual envs
+.env
+.venv
+venv/
+env/
+
+# Jupyter/Colab
+.ipynb_checkpoints/
+*.ipynb_convert/
+
+# Data (keep small samples only)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Parquet/large artifacts
+*.parquet
+*.parquett
+*.npy
+*.npz
+*.csv
+*.feather
+
+# Models / checkpoints / outputs
+*.pt
+*.pth
+*.onnx
+*.joblib
+*.h5
+outputs/
+artifacts/
+
+# Editors
+.vscode/
+.idea/
