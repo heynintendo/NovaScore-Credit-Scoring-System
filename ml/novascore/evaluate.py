@@ -141,3 +141,29 @@ def score_distribution_summary(scores: np.ndarray) -> dict[str, float]:
         "Gold": float(((scores >= 700) & (scores < 800)).mean()),
         "Platinum": float((scores >= 800).mean()),
     }
+
+
+def plot_fairness_before_after(
+    tpr_before: dict[str, float],
+    tpr_after: dict[str, float],
+    out_path: Path,
+    attribute: str = "age_bucket",
+) -> None:
+    """Grouped bar chart: per-group TPR before vs after threshold mitigation."""
+    groups = sorted(set(tpr_before) | set(tpr_after))
+    before = [tpr_before.get(g, 0.0) for g in groups]
+    after = [tpr_after.get(g, 0.0) for g in groups]
+    x = np.arange(len(groups))
+    w = 0.4
+    fig, ax = plt.subplots(figsize=(7, 4.5), dpi=120)
+    ax.bar(x - w / 2, before, w, label="before mitigation", color="#0B1628")
+    ax.bar(x + w / 2, after, w, label="after threshold optimization", color="#C9A26F")
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(g) for g in groups], rotation=0)
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title(f"Equal-opportunity check by {attribute}")
+    ax.legend(frameon=False, loc="upper right")
+    fig.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)

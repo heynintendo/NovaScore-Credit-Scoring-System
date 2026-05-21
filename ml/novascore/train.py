@@ -49,6 +49,12 @@ from .data.preprocessing import (
 )
 from .data.sequences import build_sequences
 from .data.synthesize import generate as generate_synth
+from .evaluate import plot_fairness_before_after
+from .fairness import (
+    compute_all_metrics,
+    optimize_thresholds_per_group,
+    per_group_tpr,
+)
 from .io import (
     save_calibration,
     save_checkpoint,
@@ -261,6 +267,144 @@ def _ensure_synth(data_dir: Path, n_users: int, seed: int) -> None:
     generate_synth(n_users=n_users, seed=seed, output_dir=data_dir)
 
 
+def _global_threshold_for_tpr(p_pred: np.ndarray, y_true: np.ndarray, target_tpr: float) -> float:
+    """Find the threshold at which overall TPR equals target_tpr (best-effort)."""
+    pos = p_pred[y_true == 1]
+    if len(pos) == 0:
+        return 0.5
+    sorted_pos = np.sort(pos)
+    # take the threshold so that the top fraction of positives (target_tpr) are above it
+    k = max(1, int(np.floor(len(sorted_pos) * (1 - target_tpr))))
+    return float(sorted_pos[k - 1])
+
+
+def _maybe_run_fairness(
+    data_dir: Path,
+    results_dir: Path,
+    user_ids: np.ndarray,
+    p_pred: np.ndarray,
+    y_true: np.ndarray,
+    *,
+    A: float,
+    B: float,
+    target_tpr: float = 0.8,
+    mitigation_attribute: str = "vehicle_type",
+) -> Optional[dict[str, Any]]:
+    """Compute fairness metrics and threshold-based mitigation. Saves JSON + plot.
+
+    No-op (returns None) if users_demo.parquet is not in `data_dir` — the
+    pipeline can run on real data that lacks protected-attribute labels.
+
+    The "before" threshold is the *global* cutoff that yields `target_tpr`
+    overall; the "after" threshold is computed per group to equalize TPR
+    within each group to the same target.
+    """
+    demo_path = data_dir / "users_demo.parquet"
+    if not demo_path.exists():
+        print("[fairness] no users_demo.parquet — skipping fairness analysis")
+        return None
+    demo = pd.read_parquet(demo_path)[["user_id", "gender", "age_bucket", "vehicle_type", "city"]]
+    df = (
+        pd.DataFrame({"user_id": user_ids, "p": p_pred, "y": y_true})
+        .merge(demo, on="user_id", how="left")
+    )
+    for col in ("gender", "age_bucket", "vehicle_type", "city"):
+        df[col] = df[col].fillna("unknown").astype(str)
+    groups_dict = {col: df[col].to_numpy() for col in ("gender", "age_bucket", "vehicle_type", "city")}
+    threshold = _global_threshold_for_tpr(df.p.to_numpy(), df.y.to_numpy(), target_tpr)
+    print(f"[fairness] global threshold for target_tpr={target_tpr}: {threshold:.4f}")
+    before = compute_all_metrics(df.y.to_numpy(), df.p.to_numpy(), groups_dict, threshold=threshold)
+
+    grp = df[mitigation_attribute].to_numpy()
+    thr_map = optimize_thresholds_per_group(
+        df.y.to_numpy(), df.p.to_numpy(), grp, target_tpr=target_tpr
+    )
+    # Apply per-group threshold to the mitigated attribute; other attributes keep
+    # the global threshold so the comparison isolates the mitigation effect.
+    y_pred_after = np.fromiter(
+        (
+            int(p >= thr_map.threshold_for(g))
+            for p, g in zip(df.p.to_numpy(), grp, strict=True)
+        ),
+        dtype=int,
+        count=len(df),
+    )
+
+    from .fairness import (
+        delta_fpr,
+        delta_tpr as _dt,
+        demographic_parity_ratio as _dpr,
+        equalized_odds_difference as _eod,
+    )
+
+    # `after` mirrors `before` for every attribute except the mitigated one, where
+    # we recompute metrics from the per-group-thresholded predictions.
+    after_rows: list[dict[str, Any]] = []
+    for name, g_arr in groups_dict.items():
+        if name == mitigation_attribute:
+            after_rows.append(
+                {
+                    "attribute": name,
+                    "demographic_parity_ratio": _dpr(y_pred_after, g_arr),
+                    "disparate_impact_ratio": _dpr(y_pred_after, g_arr),
+                    "delta_tpr": _dt(df.y.to_numpy(), y_pred_after, g_arr),
+                    "delta_fpr": delta_fpr(df.y.to_numpy(), y_pred_after, g_arr),
+                    "equalized_odds_difference": _eod(df.y.to_numpy(), y_pred_after, g_arr),
+                }
+            )
+        else:
+            after_rows.append(
+                before.loc[before.attribute == name].iloc[0].to_dict()
+            )
+    after = pd.DataFrame(after_rows)
+
+    # Per-group TPR for the plot (before vs after on the mitigated attribute).
+    y_pred_before = (df.p.to_numpy() >= threshold).astype(int)
+    tpr_before = per_group_tpr(df.y.to_numpy(), y_pred_before, grp)
+    tpr_after = per_group_tpr(df.y.to_numpy(), y_pred_after, grp)
+    summary_thr = {
+        "global_threshold_before": float(threshold),
+        "target_tpr": float(target_tpr),
+    }
+    plot_fairness_before_after(
+        {str(k): v for k, v in tpr_before.items()},
+        {str(k): v for k, v in tpr_after.items()},
+        results_dir / "fairness_before_after.png",
+        attribute=mitigation_attribute,
+    )
+
+    summary = {
+        "mitigation_attribute": mitigation_attribute,
+        "target_tpr": float(target_tpr),
+        "global_threshold_before": float(threshold),
+        "thresholds": thr_map.to_dict(),
+        "before": before.to_dict(orient="records"),
+        "after": after.to_dict(orient="records"),
+        "tpr_before": {str(k): float(v) for k, v in tpr_before.items()},
+        "tpr_after": {str(k): float(v) for k, v in tpr_after.items()},
+        "score_adjustment_per_group": _score_adjustments_dict(thr_map, A, B, threshold),
+    }
+    save_json(results_dir / "fairness_before_after.json", summary)
+    save_json(results_dir / "threshold_map.json", thr_map.to_dict())
+    delta_tpr_before = float(before.set_index("attribute").loc[mitigation_attribute, "delta_tpr"])
+    delta_tpr_after = float(after.set_index("attribute").loc[mitigation_attribute, "delta_tpr"])
+    print(
+        f"[fairness] mitigated on {mitigation_attribute}: "
+        f"ΔTPR {delta_tpr_before:.3f} -> {delta_tpr_after:.3f}"
+    )
+    return summary
+
+
+def _score_adjustments_dict(thr_map, A: float, B: float, baseline: float) -> dict[str, float]:
+    """Per-group additive score shift relative to a baseline threshold."""
+    from .fairness import score_adjustment_from_threshold
+
+    return {
+        str(k): score_adjustment_from_threshold(v, A, B, default_threshold=baseline)
+        for k, v in thr_map.thresholds.items()
+    }
+
+
 def run_training(cfg: TrainingConfig) -> dict[str, Any]:
     """End-to-end training pipeline. Persists all artifacts to cfg.results_dir."""
     device = cfg.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -417,6 +561,16 @@ def run_training(cfg: TrainingConfig) -> dict[str, Any]:
     if p_te_lgb is not None:
         np.save(rd / "test_probs_lightgbm.npy", p_te_lgb)
 
+    fairness_summary = _maybe_run_fairness(
+        cfg.data_dir,
+        rd,
+        users["user_id"].to_numpy(),
+        all_p,
+        y,
+        A=A,
+        B=B,
+    )
+
     metrics = {
         "hybrid_test_auroc": float(test_auc),
         "hybrid_delta_tpr_at_0.5": float(dtpr),
@@ -437,6 +591,7 @@ def run_training(cfg: TrainingConfig) -> dict[str, Any]:
         "feature_count": int(X_tab.shape[1]),
         "seed": int(cfg.seed),
         "epochs_config": int(cfg.epochs),
+        "fairness": fairness_summary,
     }
     save_json(rd / "metrics.json", metrics)
     print(f"[done] artifacts written to {rd}")
