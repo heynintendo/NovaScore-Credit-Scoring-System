@@ -90,9 +90,7 @@ def delta_fpr(y_true: np.ndarray, y_pred: np.ndarray, group: np.ndarray) -> floa
     return float(max(rates) - min(rates))
 
 
-def equalized_odds_difference(
-    y_true: np.ndarray, y_pred: np.ndarray, group: np.ndarray
-) -> float:
+def equalized_odds_difference(y_true: np.ndarray, y_pred: np.ndarray, group: np.ndarray) -> float:
     """max(ΔTPR, ΔFPR). 0 means perfect equalized odds."""
     return float(max(delta_tpr(y_true, y_pred, group), delta_fpr(y_true, y_pred, group)))
 

@@ -67,9 +67,7 @@ class TCNEncoder(nn.Module):
         ch = in_dim
         layers: list[nn.Module] = []
         for b in range(n_blocks):
-            layers.append(
-                TemporalBlock(ch, d_model, kernel, dilation=2**b, dropout=dropout)
-            )
+            layers.append(TemporalBlock(ch, d_model, kernel, dilation=2**b, dropout=dropout))
             ch = d_model
         self.tcn = nn.Sequential(*layers)
         self.pool = nn.AdaptiveAvgPool1d(1)

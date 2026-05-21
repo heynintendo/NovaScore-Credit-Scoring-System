@@ -26,12 +26,12 @@ import numpy as np
 from . import SEQ_FEATURES, T_WEEKS
 from .calibration import BAND_DESCRIPTIONS, apply_calibration, decision_band
 from .evaluate import (
-    build_predictions_df,
     plot_calibration,
     plot_feature_importance,
     plot_roc,
     predict_probs,
 )
+from .home_credit_pipeline import HomeCreditConfig, run_home_credit_pipeline
 from .io import (
     load_calibration,
     load_checkpoint,
@@ -39,7 +39,6 @@ from .io import (
     load_scaler,
 )
 from .models.hybrid import HybridModel
-from .home_credit_pipeline import HomeCreditConfig, run_home_credit_pipeline
 from .sweep import SweepConfig, run_phase45_pipeline
 from .train import TrainingConfig, run_training
 
@@ -47,7 +46,9 @@ from .train import TrainingConfig, run_training
 def _cmd_train(args: argparse.Namespace) -> int:
     if args.dataset == "home_credit":
         cfg = HomeCreditConfig(
-            data_dir=Path(args.data_dir) if args.data_dir != "ml/data/synthetic" else Path("ml/data/home_credit"),
+            data_dir=Path(args.data_dir)
+            if args.data_dir != "ml/data/synthetic"
+            else Path("ml/data/home_credit"),
             results_dir=Path(args.results_dir),
             seed=args.seed,
             epochs=args.epochs,
@@ -87,10 +88,9 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
     metrics = load_json(rd / "metrics.json")
     print(json.dumps(metrics, indent=2))
 
-    # Rebuild plots from saved arrays + LightGBM model.
-    try:
-        all_probs = np.load(rd / "all_probs.npy")
-    except FileNotFoundError:
+    # Rebuild plots from saved arrays + LightGBM model. Just verify existence;
+    # the actual probabilities for plotting come from test_predictions.csv below.
+    if not (rd / "all_probs.npy").exists():
         print("missing all_probs.npy — re-run `novascore train` first")
         return 1
 
@@ -102,7 +102,15 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
     df = pd.read_csv(test_pred_path)
     y_te = df["y_true"].to_numpy()
-    p_te = df["pd90"].to_numpy()
+    # Schema differs between paths: synth path emits `pd90`; Home Credit path
+    # emits `pd_ensemble` (with separate `pd_hybrid` / `pd_lightgbm` columns).
+    for pd_col in ("pd_ensemble", "pd90", "pd_lightgbm"):
+        if pd_col in df.columns:
+            p_te = df[pd_col].to_numpy()
+            break
+    else:
+        print(f"no PD column found in {test_pred_path}. Columns: {list(df.columns)}")
+        return 1
 
     p_te_lgb = None
     lgb_probs_path = rd / "test_probs_lightgbm.npy"
@@ -146,11 +154,14 @@ def _cmd_score(args: argparse.Namespace) -> int:
 
     inputs: dict[str, Any] = json.loads(Path(args.input).read_text())
     x_tab = _build_input_vec(inputs, feature_columns, scaler_mean, scaler_scale).reshape(1, -1)
-    # Sequence and graph are zero (no history available for ad-hoc inference).
-    x_seq = np.zeros((1, T_WEEKS, len(SEQ_FEATURES)), dtype="float32")
-    x_g = np.zeros((1, 64), dtype="float32")
-
-    model, _hparams = load_checkpoint(rd / "checkpoint.pt", HybridModel)
+    model, hparams = load_checkpoint(rd / "checkpoint.pt", HybridModel)
+    # Sequence + graph dims come from the saved checkpoint (synth used 13×9 +
+    # 64-d graph, Home Credit uses 60×8 + no graph). Zeros = "no history".
+    n_seq_features = int(hparams.get("n_seq_features", len(SEQ_FEATURES)))
+    seq_len = T_WEEKS if n_seq_features == len(SEQ_FEATURES) else 60
+    g_dim = int(hparams.get("g_dim", 0))
+    x_seq = np.zeros((1, seq_len, n_seq_features), dtype="float32")
+    x_g = np.zeros((1, g_dim), dtype="float32")
     probs = predict_probs(model, x_tab, x_seq, x_g, device="cpu")
     score = float(apply_calibration(probs, calib)[0])
     band = decision_band(score)
@@ -178,8 +189,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_train.add_argument("--data-dir", default="ml/data/synthetic")
     p_train.add_argument("--results-dir", default="ml/results")
     p_train.add_argument("--n-users", type=int, default=10000)
-    p_train.add_argument("--sample-n", type=int, default=None, help="sample N applicants (home_credit only)")
-    p_train.add_argument("--n-trials", type=int, default=8, help="hybrid HP trials (home_credit only)")
+    p_train.add_argument(
+        "--sample-n", type=int, default=None, help="sample N applicants (home_credit only)"
+    )
+    p_train.add_argument(
+        "--n-trials", type=int, default=8, help="hybrid HP trials (home_credit only)"
+    )
     p_train.add_argument("--seed", type=int, default=42)
     p_train.add_argument("--epochs", type=int, default=20)
     p_train.add_argument("--skip-lightgbm", action="store_true")

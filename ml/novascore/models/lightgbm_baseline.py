@@ -66,5 +66,5 @@ def test_auroc(booster: lgb.Booster, X_te: np.ndarray, y_te: np.ndarray) -> floa
 def feature_importance(booster: lgb.Booster, feature_names: list[str]) -> list[tuple[str, float]]:
     """Return [(feature, gain)] sorted descending."""
     gains = booster.feature_importance(importance_type="gain").tolist()
-    pairs = sorted(zip(feature_names, gains), key=lambda kv: kv[1], reverse=True)
+    pairs = sorted(zip(feature_names, gains, strict=True), key=lambda kv: kv[1], reverse=True)
     return pairs

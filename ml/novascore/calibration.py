@@ -37,8 +37,10 @@ class CalibrationParams:
         return {"A": self.A, "B": self.B, "a": self.a, "b": self.b}
 
     @classmethod
-    def from_dict(cls, d: dict[str, float]) -> "CalibrationParams":
-        return cls(A=float(d["A"]), B=float(d["B"]), a=float(d.get("a", 1.0)), b=float(d.get("b", 0.0)))
+    def from_dict(cls, d: dict[str, float]) -> CalibrationParams:
+        return cls(
+            A=float(d["A"]), B=float(d["B"]), a=float(d.get("a", 1.0)), b=float(d.get("b", 0.0))
+        )
 
 
 def solve_score_params(

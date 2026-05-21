@@ -38,7 +38,9 @@ def is_bad(status: object) -> bool:
     return any(bad in s for bad in BAD_STATUSES)
 
 
-def load_parquets(trips_path: str | Path, txns_path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_parquets(
+    trips_path: str | Path, txns_path: str | Path
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read trips + txns parquets and lower-case all column names."""
     trips = pd.read_parquet(trips_path)
     txns = pd.read_parquet(txns_path)
@@ -59,7 +61,14 @@ def parse_datetimes(trips: pd.DataFrame, txns: pd.DataFrame) -> tuple[pd.DataFra
         errors="coerce",
     )
 
-    for col in ("trip_duration", "trip_distance", "fare_amount", "tip_amount", "trip_rating", "safety_score"):
+    for col in (
+        "trip_duration",
+        "trip_distance",
+        "fare_amount",
+        "tip_amount",
+        "trip_rating",
+        "safety_score",
+    ):
         if col in trips.columns:
             trips[col] = pd.to_numeric(trips[col], errors="coerce")
     if "cancellation_flag" in trips.columns:
@@ -146,7 +155,11 @@ def compute_tabular_features(
     to produce a column-identical feature vector.
     """
     trip_g = trips_w.groupby("user_id", dropna=False)
-    incident_agg = ("incident_flag", "mean") if "incident_flag" in trips_w.columns else ("cancellation_flag", "mean")
+    incident_agg = (
+        ("incident_flag", "mean")
+        if "incident_flag" in trips_w.columns
+        else ("cancellation_flag", "mean")
+    )
     trip_agg = trip_g.agg(
         trips_count=("trip_id", "count"),
         trip_dur_mean=("trip_duration", "mean"),

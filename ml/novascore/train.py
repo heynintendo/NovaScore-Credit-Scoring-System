@@ -19,7 +19,7 @@ import copy
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -68,8 +68,10 @@ from .models.lightgbm_baseline import (
 )
 from .models.lightgbm_baseline import (
     score_lightgbm,
-    test_auroc as lgb_test_auroc,
     train_lightgbm,
+)
+from .models.lightgbm_baseline import (
+    test_auroc as lgb_test_auroc,
 )
 from .models.node2vec_embed import compute_user_embeddings
 
@@ -104,7 +106,9 @@ class NovaDS(Dataset):
         )
 
 
-def _val_auroc(model: HybridModel, loader: DataLoader, device: str) -> tuple[float, np.ndarray, np.ndarray]:
+def _val_auroc(
+    model: HybridModel, loader: DataLoader, device: str
+) -> tuple[float, np.ndarray, np.ndarray]:
     model.eval()
     ys: list[np.ndarray] = []
     ps: list[np.ndarray] = []
@@ -132,7 +136,7 @@ def train_model(
     lr: float = 3e-4,
     weight_decay: float = 1e-4,
     patience: int = 5,
-    device: Optional[str] = None,
+    device: str | None = None,
     verbose: bool = True,
 ) -> HybridModel:
     """Train HybridModel and return the model with best-val weights loaded.
@@ -142,9 +146,7 @@ def train_model(
     patience=5, mixed precision on CUDA.
     """
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-    model = HybridModel(
-        n_tab=n_tab, n_seq_features=n_seq_features, g_dim=g_dim
-    ).to(device)
+    model = HybridModel(n_tab=n_tab, n_seq_features=n_seq_features, g_dim=g_dim).to(device)
     opt = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     sched = CosineAnnealingLR(opt, T_max=epochs)
     loss_fn = nn.BCEWithLogitsLoss()
@@ -242,7 +244,7 @@ class TrainingConfig:
     test_size: float = 0.15
     val_size: float = 0.1765  # fraction of train+val pool used as val
     use_graph: bool = True
-    device: Optional[str] = None
+    device: str | None = None
     skip_lightgbm: bool = False
 
     def __post_init__(self) -> None:
@@ -250,7 +252,7 @@ class TrainingConfig:
         self.results_dir = Path(self.results_dir)
 
 
-def _stratify(y: np.ndarray, min_per_class: int = 2) -> Optional[np.ndarray]:
+def _stratify(y: np.ndarray, min_per_class: int = 2) -> np.ndarray | None:
     vals, cnts = np.unique(y, return_counts=True)
     if len(vals) < 2 or cnts.min() < min_per_class:
         return None
@@ -289,7 +291,7 @@ def _maybe_run_fairness(
     B: float,
     target_tpr: float = 0.8,
     mitigation_attribute: str = "vehicle_type",
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Compute fairness metrics and threshold-based mitigation. Saves JSON + plot.
 
     No-op (returns None) if users_demo.parquet is not in `data_dir` — the
@@ -304,13 +306,14 @@ def _maybe_run_fairness(
         print("[fairness] no users_demo.parquet — skipping fairness analysis")
         return None
     demo = pd.read_parquet(demo_path)[["user_id", "gender", "age_bucket", "vehicle_type", "city"]]
-    df = (
-        pd.DataFrame({"user_id": user_ids, "p": p_pred, "y": y_true})
-        .merge(demo, on="user_id", how="left")
+    df = pd.DataFrame({"user_id": user_ids, "p": p_pred, "y": y_true}).merge(
+        demo, on="user_id", how="left"
     )
     for col in ("gender", "age_bucket", "vehicle_type", "city"):
         df[col] = df[col].fillna("unknown").astype(str)
-    groups_dict = {col: df[col].to_numpy() for col in ("gender", "age_bucket", "vehicle_type", "city")}
+    groups_dict = {
+        col: df[col].to_numpy() for col in ("gender", "age_bucket", "vehicle_type", "city")
+    }
     threshold = _global_threshold_for_tpr(df.p.to_numpy(), df.y.to_numpy(), target_tpr)
     print(f"[fairness] global threshold for target_tpr={target_tpr}: {threshold:.4f}")
     before = compute_all_metrics(df.y.to_numpy(), df.p.to_numpy(), groups_dict, threshold=threshold)
@@ -322,18 +325,21 @@ def _maybe_run_fairness(
     # Apply per-group threshold to the mitigated attribute; other attributes keep
     # the global threshold so the comparison isolates the mitigation effect.
     y_pred_after = np.fromiter(
-        (
-            int(p >= thr_map.threshold_for(g))
-            for p, g in zip(df.p.to_numpy(), grp, strict=True)
-        ),
+        (int(p >= thr_map.threshold_for(g)) for p, g in zip(df.p.to_numpy(), grp, strict=True)),
         dtype=int,
         count=len(df),
     )
 
     from .fairness import (
         delta_fpr,
+    )
+    from .fairness import (
         delta_tpr as _dt,
+    )
+    from .fairness import (
         demographic_parity_ratio as _dpr,
+    )
+    from .fairness import (
         equalized_odds_difference as _eod,
     )
 
@@ -353,19 +359,13 @@ def _maybe_run_fairness(
                 }
             )
         else:
-            after_rows.append(
-                before.loc[before.attribute == name].iloc[0].to_dict()
-            )
+            after_rows.append(before.loc[before.attribute == name].iloc[0].to_dict())
     after = pd.DataFrame(after_rows)
 
     # Per-group TPR for the plot (before vs after on the mitigated attribute).
     y_pred_before = (df.p.to_numpy() >= threshold).astype(int)
     tpr_before = per_group_tpr(df.y.to_numpy(), y_pred_before, grp)
     tpr_after = per_group_tpr(df.y.to_numpy(), y_pred_after, grp)
-    summary_thr = {
-        "global_threshold_before": float(threshold),
-        "target_tpr": float(target_tpr),
-    }
     plot_fairness_before_after(
         {str(k): v for k, v in tpr_before.items()},
         {str(k): v for k, v in tpr_after.items()},
@@ -468,13 +468,11 @@ def run_training(cfg: TrainingConfig) -> dict[str, Any]:
 
     # LightGBM baseline on tabular features only.
     booster = None
-    p_te_lgb: Optional[np.ndarray] = None
+    p_te_lgb: np.ndarray | None = None
     lgb_info: dict[str, Any] = {}
     if not cfg.skip_lightgbm:
         print("[lgbm] training baseline")
-        booster, lgb_info = train_lightgbm(
-            X_tab[tr_idx], y[tr_idx], X_tab[va_idx], y[va_idx]
-        )
+        booster, lgb_info = train_lightgbm(X_tab[tr_idx], y[tr_idx], X_tab[va_idx], y[va_idx])
         p_te_lgb = score_lightgbm(booster, X_tab[te_idx])
         lgb_info["test_auc"] = lgb_test_auroc(booster, X_tab[te_idx], y[te_idx])
         print(

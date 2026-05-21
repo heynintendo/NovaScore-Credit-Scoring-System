@@ -56,7 +56,6 @@ from .evaluate import (
     plot_calibration,
     plot_fairness_before_after,
     plot_feature_importance,
-    plot_roc,
 )
 from .fairness import (
     compute_all_metrics,
@@ -79,7 +78,7 @@ from .models.hybrid import HybridModel
 from .models.lightgbm_baseline import (
     feature_importance as lgb_feature_importance,
 )
-from .train import NovaDS, _val_auroc, train_model
+from .train import NovaDS, _val_auroc
 
 # ---------------------------------------------------------------------------
 # Search spaces.
@@ -261,9 +260,7 @@ def lgb_grid_search(data: PreparedData) -> tuple[Any, dict[str, Any], list[dict[
             )
         )
         dtr = lgb.Dataset(data.X_tab[data.tr_idx], label=data.y[data.tr_idx])
-        dva = lgb.Dataset(
-            data.X_tab[data.va_idx], label=data.y[data.va_idx], reference=dtr
-        )
+        dva = lgb.Dataset(data.X_tab[data.va_idx], label=data.y[data.va_idx], reference=dtr)
         cb = [lgb.early_stopping(stopping_rounds=200, verbose=False)]
         b = lgb.train(
             params=params,
@@ -284,7 +281,11 @@ def lgb_grid_search(data: PreparedData) -> tuple[Any, dict[str, Any], list[dict[
         if v_auc > best["val_auc"]:
             best = {"val_auc": v_auc, "cfg": cfg_logged, "booster": b, "test_auc": t_auc}
 
-    return best["booster"], {**best["cfg"], "val_auc": best["val_auc"], "test_auc": best["test_auc"]}, history
+    return (
+        best["booster"],
+        {**best["cfg"], "val_auc": best["val_auc"], "test_auc": best["test_auc"]},
+        history,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +296,9 @@ def _sample_hp(rng: random.Random) -> dict[str, Any]:
     return {k: rng.choice(v) for k, v in HP_SEARCH_SPACE.items()}
 
 
-def _hybrid_predict_full(model: HybridModel, data: PreparedData, idx: np.ndarray, device: str) -> np.ndarray:
+def _hybrid_predict_full(
+    model: HybridModel, data: PreparedData, idx: np.ndarray, device: str
+) -> np.ndarray:
     ds = NovaDS(data.X_tab[idx], data.X_seq[idx], data.X_g[idx], data.y[idx], data.group_codes[idx])
     loader = DataLoader(ds, batch_size=1024, shuffle=False)
     _, _, p = _val_auroc(model, loader, device)
@@ -311,10 +314,19 @@ def hp_sweep_hybrid(
     # Pre-sample distinct configs to avoid duplicate trials.
     all_configs = list(itertools.product(*HP_SEARCH_SPACE.values()))
     rng.shuffle(all_configs)
-    trial_configs = [dict(zip(HP_SEARCH_SPACE.keys(), c)) for c in all_configs[: cfg.n_hp_trials]]
+    trial_configs = [
+        dict(zip(HP_SEARCH_SPACE.keys(), c, strict=True)) for c in all_configs[: cfg.n_hp_trials]
+    ]
 
     history: list[dict[str, Any]] = []
-    best = {"val_auc": -1.0, "cfg": None, "model": None, "test_auc": None, "val_p": None, "test_p": None}
+    best = {
+        "val_auc": -1.0,
+        "cfg": None,
+        "model": None,
+        "test_auc": None,
+        "val_p": None,
+        "test_p": None,
+    }
 
     for i, hp in enumerate(trial_configs, 1):
         t0 = time.time()
@@ -371,7 +383,7 @@ def hp_sweep_hybrid(
         )
         print(
             f"[hp-sweep] {i:2d}/{cfg.n_hp_trials}  {hp}  "
-            f"val={v_auc:.4f}  test={t_auc:.4f}  params={n_params/1e6:.2f}M  "
+            f"val={v_auc:.4f}  test={t_auc:.4f}  params={n_params / 1e6:.2f}M  "
             f"t={time.time() - t0:.1f}s"
         )
         if v_auc > best["val_auc"]:
@@ -426,7 +438,7 @@ def _train_hybrid_with_hp(
     best_auc = -1.0
     best_state = copy.deepcopy(model.state_dict())
     bad = 0
-    for ep in range(1, cfg.epochs + 1):
+    for _ep in range(1, cfg.epochs + 1):
         model.train()
         for x_tab, x_seq, x_g, yy, _gg in tr_loader:
             x_tab = x_tab.to(device)
@@ -559,7 +571,9 @@ def _run_fairness(
     )
     for col in ("gender", "age_bucket", "vehicle_type", "city"):
         df[col] = df[col].fillna("unknown").astype(str)
-    groups_dict = {col: df[col].to_numpy() for col in ("gender", "age_bucket", "vehicle_type", "city")}
+    groups_dict = {
+        col: df[col].to_numpy() for col in ("gender", "age_bucket", "vehicle_type", "city")
+    }
     threshold = _global_threshold_for_tpr(df.p.to_numpy(), df.y.to_numpy(), cfg.target_tpr)
     print(f"[fairness] global threshold for TPR={cfg.target_tpr}: {threshold:.4f}")
 
@@ -635,7 +649,9 @@ def run_phase45_pipeline(cfg: SweepConfig | None = None) -> dict[str, Any]:
     print("\n--- LightGBM grid search ---")
     t = time.time()
     best_lgb, best_lgb_cfg, lgb_history = lgb_grid_search(data)
-    print(f"[lgbm-grid] best val_auc={best_lgb_cfg['val_auc']:.4f}  test_auc={best_lgb_cfg['test_auc']:.4f}")
+    print(
+        f"[lgbm-grid] best val_auc={best_lgb_cfg['val_auc']:.4f}  test_auc={best_lgb_cfg['test_auc']:.4f}"
+    )
     print(f"[lgbm-grid] took {time.time() - t:.1f}s")
     p_lgb_val = best_lgb.predict(data.X_tab[data.va_idx], num_iteration=best_lgb.best_iteration)
     p_lgb_test = best_lgb.predict(data.X_tab[data.te_idx], num_iteration=best_lgb.best_iteration)
@@ -681,10 +697,14 @@ def run_phase45_pipeline(cfg: SweepConfig | None = None) -> dict[str, Any]:
     fairness_summary = _run_fairness(data, p_ens_full, A, B, cfg, cfg.results_dir)
     if fairness_summary:
         before_dtpr = next(
-            r["delta_tpr"] for r in fairness_summary["before"] if r["attribute"] == cfg.mitigation_attribute
+            r["delta_tpr"]
+            for r in fairness_summary["before"]
+            if r["attribute"] == cfg.mitigation_attribute
         )
         after_dtpr = next(
-            r["delta_tpr"] for r in fairness_summary["after"] if r["attribute"] == cfg.mitigation_attribute
+            r["delta_tpr"]
+            for r in fairness_summary["after"]
+            if r["attribute"] == cfg.mitigation_attribute
         )
         print(f"[fairness] {cfg.mitigation_attribute} ΔTPR {before_dtpr:.4f} → {after_dtpr:.4f}")
 

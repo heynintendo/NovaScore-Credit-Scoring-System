@@ -20,7 +20,7 @@ except ImportError as e:  # pragma: no cover
     ) from e
 
 
-def build_user_merchant_graph(txns_w: pd.DataFrame) -> "nx.Graph":
+def build_user_merchant_graph(txns_w: pd.DataFrame) -> nx.Graph:
     """Build an undirected bipartite graph from (user_id, merchant_id) edges."""
     edges = txns_w[["user_id", "merchant_id"]].dropna()
     pairs = [(str(u), f"m_{m}") for u, m in edges.itertuples(index=False, name=None)]

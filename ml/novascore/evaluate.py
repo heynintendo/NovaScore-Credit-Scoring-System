@@ -65,9 +65,7 @@ def build_predictions_df(
         }
     )
     if groups is not None and group_categories is not None:
-        df["group"] = pd.Categorical.from_codes(
-            groups, categories=group_categories
-        ).astype(str)
+        df["group"] = pd.Categorical.from_codes(groups, categories=group_categories).astype(str)
     return df
 
 
@@ -98,9 +96,7 @@ def plot_roc(
     plt.close(fig)
 
 
-def plot_calibration(
-    y_te: np.ndarray, p_te: np.ndarray, out_path: Path, n_bins: int = 10
-) -> None:
+def plot_calibration(y_te: np.ndarray, p_te: np.ndarray, out_path: Path, n_bins: int = 10) -> None:
     """Reliability diagram comparing predicted PD to observed default rate."""
     frac_pos, mean_pred = calibration_curve(y_te, p_te, n_bins=n_bins, strategy="quantile")
     fig, ax = plt.subplots(figsize=(6, 6), dpi=120)

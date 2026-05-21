@@ -30,7 +30,7 @@ class SequenceScaler:
         return {"means": self.means, "stds": self.stds}
 
     @classmethod
-    def from_dict(cls, d: dict[str, dict[str, float]]) -> "SequenceScaler":
+    def from_dict(cls, d: dict[str, dict[str, float]]) -> SequenceScaler:
         return cls(means=dict(d["means"]), stds=dict(d["stds"]))
 
 
@@ -130,7 +130,5 @@ def build_sequences(
         t = int(row["week_idx"])
         if i is None or t < 0 or t > (t_weeks - 1):
             continue
-        x_seq[i, t, :] = np.asarray(
-            [row[c] for c in SEQ_COLS], dtype="float32"
-        )
+        x_seq[i, t, :] = np.asarray([row[c] for c in SEQ_COLS], dtype="float32")
     return x_seq, SequenceScaler(means=means, stds=stds)

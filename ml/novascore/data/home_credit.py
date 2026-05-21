@@ -189,7 +189,9 @@ def _aggregate_prev_app(prev: pd.DataFrame) -> pd.DataFrame:
         refused = (prev["NAME_CONTRACT_STATUS"] == "Refused").astype(int)
         g["prev_n_approved"] = approved.groupby(prev["SK_ID_CURR"]).sum()
         g["prev_n_refused"] = refused.groupby(prev["SK_ID_CURR"]).sum()
-        g["prev_refusal_rate"] = g["prev_n_refused"] / (g["prev_n_approved"] + g["prev_n_refused"]).replace(0, np.nan)
+        g["prev_refusal_rate"] = g["prev_n_refused"] / (
+            g["prev_n_approved"] + g["prev_n_refused"]
+        ).replace(0, np.nan)
     return g.reset_index()
 
 
@@ -227,9 +229,13 @@ def build_tabular_features(
     if "bureau" in tables:
         app = app.merge(_aggregate_bureau(tables["bureau"]), on="SK_ID_CURR", how="left")
     if "previous_application" in tables:
-        app = app.merge(_aggregate_prev_app(tables["previous_application"]), on="SK_ID_CURR", how="left")
+        app = app.merge(
+            _aggregate_prev_app(tables["previous_application"]), on="SK_ID_CURR", how="left"
+        )
     if "installments_payments" in tables:
-        app = app.merge(_aggregate_installments(tables["installments_payments"]), on="SK_ID_CURR", how="left")
+        app = app.merge(
+            _aggregate_installments(tables["installments_payments"]), on="SK_ID_CURR", how="left"
+        )
 
     app = _drop_high_missing(app, MAX_MISSING_RATIO)
     # One-hot low-cardinality categoricals; record the levels for inference.

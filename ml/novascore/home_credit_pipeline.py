@@ -260,7 +260,9 @@ def _train_hybrid_with_hp(
                 opt.step()
         sched.step()
         val_auc, _, _ = _val_auroc(model, va_loader, device)
-        print(f"      ep {ep:02d}  val_auc={val_auc:.4f}  ({time.time()-ep_start:.1f}s)", flush=True)
+        print(
+            f"      ep {ep:02d}  val_auc={val_auc:.4f}  ({time.time() - ep_start:.1f}s)", flush=True
+        )
         if val_auc > best_auc + 1e-6:
             best_auc = val_auc
             best_state = copy.deepcopy(model.state_dict())
@@ -273,7 +275,9 @@ def _train_hybrid_with_hp(
     return model
 
 
-def _hybrid_predict(model: HybridModel, X_tab: np.ndarray, X_seq: np.ndarray, device: str, batch_size: int = 1024) -> np.ndarray:
+def _hybrid_predict(
+    model: HybridModel, X_tab: np.ndarray, X_seq: np.ndarray, device: str, batch_size: int = 1024
+) -> np.ndarray:
     model.eval()
     n = len(X_tab)
     out = np.zeros(n, dtype="float64")
@@ -297,7 +301,9 @@ def _hybrid_hp_sweep(
     rng = random.Random(cfg.seed)
     all_configs = list(itertools.product(*HP_SEARCH_SPACE.values()))
     rng.shuffle(all_configs)
-    trial_configs = [dict(zip(HP_SEARCH_SPACE.keys(), c)) for c in all_configs[: cfg.n_hp_trials]]
+    trial_configs = [
+        dict(zip(HP_SEARCH_SPACE.keys(), c, strict=True)) for c in all_configs[: cfg.n_hp_trials]
+    ]
 
     history: list[dict[str, Any]] = []
     best = {"val_auc": -1.0, "cfg": None, "model": None, "test_auc": None}
@@ -327,14 +333,12 @@ def _hybrid_hp_sweep(
         )
         print(
             f"[hp-sweep] {i:2d}/{cfg.n_hp_trials}  {hp}  "
-            f"val={v_auc:.4f}  test={t_auc:.4f}  params={n_params/1e6:.2f}M  t={wall:.1f}s",
+            f"val={v_auc:.4f}  test={t_auc:.4f}  params={n_params / 1e6:.2f}M  t={wall:.1f}s",
             flush=True,
         )
         # Persist sweep progress incrementally so a crash mid-sweep is recoverable.
         try:
-            (cfg.results_dir / "hp_sweep_partial.json").write_text(
-                json.dumps(history, indent=2)
-            )
+            (cfg.results_dir / "hp_sweep_partial.json").write_text(json.dumps(history, indent=2))
         except Exception:
             pass
         if v_auc > best["val_auc"]:
@@ -345,7 +349,11 @@ def _hybrid_hp_sweep(
         gc.collect()
         _empty_device_cache(device)
 
-    return best["model"], {**best["cfg"], "val_auc": best["val_auc"], "test_auc": best["test_auc"]}, history
+    return (
+        best["model"],
+        {**best["cfg"], "val_auc": best["val_auc"], "test_auc": best["test_auc"]},
+        history,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +379,9 @@ def _ensemble(p_h_val, p_h_test, p_l_val, p_l_test, y_val, y_test):
     }
 
 
-def _ensemble_probs_full(model: HybridModel, booster: lgb.Booster, bundle: HomeCreditBundle, weights, device: str) -> np.ndarray:
+def _ensemble_probs_full(
+    model: HybridModel, booster: lgb.Booster, bundle: HomeCreditBundle, weights, device: str
+) -> np.ndarray:
     p_h = _hybrid_predict(model, bundle.X_tab, bundle.X_seq, device)
     p_l = booster.predict(bundle.X_tab, num_iteration=booster.best_iteration)
     return weights["hybrid"] * p_h + weights["lightgbm"] * p_l
@@ -429,7 +439,9 @@ def _run_fairness(
                     "disparate_impact_ratio": demographic_parity_ratio(y_pred_after, g_arr),
                     "delta_tpr": delta_tpr(df.y.to_numpy(), y_pred_after, g_arr),
                     "delta_fpr": delta_fpr(df.y.to_numpy(), y_pred_after, g_arr),
-                    "equalized_odds_difference": equalized_odds_difference(df.y.to_numpy(), y_pred_after, g_arr),
+                    "equalized_odds_difference": equalized_odds_difference(
+                        df.y.to_numpy(), y_pred_after, g_arr
+                    ),
                 }
             )
         else:
@@ -563,17 +575,27 @@ def run_home_credit_pipeline(cfg: HomeCreditConfig | None = None) -> dict[str, A
     print("\n--- Hybrid HP sweep ---")
     t = time.time()
     best_hybrid, hybrid_cfg, hp_history = _hybrid_hp_sweep(d, cfg, device)
-    print(f"[hp-sweep] took {time.time() - t:.1f}s  best val={hybrid_cfg['val_auc']:.4f}  test={hybrid_cfg['test_auc']:.4f}")
+    print(
+        f"[hp-sweep] took {time.time() - t:.1f}s  best val={hybrid_cfg['val_auc']:.4f}  test={hybrid_cfg['test_auc']:.4f}"
+    )
 
     # Component predictions on val + test for ensemble.
-    p_h_val = _hybrid_predict(best_hybrid, d.bundle.X_tab[d.va_idx], d.bundle.X_seq[d.va_idx], device)
-    p_h_test = _hybrid_predict(best_hybrid, d.bundle.X_tab[d.te_idx], d.bundle.X_seq[d.te_idx], device)
+    p_h_val = _hybrid_predict(
+        best_hybrid, d.bundle.X_tab[d.va_idx], d.bundle.X_seq[d.va_idx], device
+    )
+    p_h_test = _hybrid_predict(
+        best_hybrid, d.bundle.X_tab[d.te_idx], d.bundle.X_seq[d.te_idx], device
+    )
     p_l_val = booster.predict(d.bundle.X_tab[d.va_idx], num_iteration=booster.best_iteration)
     p_l_test = booster.predict(d.bundle.X_tab[d.te_idx], num_iteration=booster.best_iteration)
 
     print("\n--- Ensemble ---")
-    ens = _ensemble(p_h_val, p_h_test, p_l_val, p_l_test, d.bundle.y[d.va_idx], d.bundle.y[d.te_idx])
-    print(f"[ensemble] weights={ens['weights']}  val={ens['val_auc']:.4f}  test={ens['test_auc']:.4f}")
+    ens = _ensemble(
+        p_h_val, p_h_test, p_l_val, p_l_test, d.bundle.y[d.va_idx], d.bundle.y[d.te_idx]
+    )
+    print(
+        f"[ensemble] weights={ens['weights']}  val={ens['val_auc']:.4f}  test={ens['test_auc']:.4f}"
+    )
     p_ens_full = _ensemble_probs_full(best_hybrid, booster, bundle, ens["weights"], device)
 
     # Calibration.
@@ -630,7 +652,9 @@ def run_home_credit_pipeline(cfg: HomeCreditConfig | None = None) -> dict[str, A
         {"means": bundle.seq_mean.tolist(), "stds": bundle.seq_scale.tolist()},
     )
     save_calibration(rd / "calibration.json", calib)
-    save_json(rd / "feature_importance.json", lgb_feature_importance(booster, bundle.feature_columns))
+    save_json(
+        rd / "feature_importance.json", lgb_feature_importance(booster, bundle.feature_columns)
+    )
     save_json(
         rd / "hp_sweep.json",
         {"hybrid_sweep": hp_history, "lightgbm": lgb_info, "ensemble_weights": ens["weights"]},

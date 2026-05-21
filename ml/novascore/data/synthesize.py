@@ -15,7 +15,6 @@ Bias injection (used as test case for the fairness module):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -112,7 +111,9 @@ def _draw_trips(
             safety = float(np.clip(rng.normal(0.99 - 1.5 * pd_u, 0.03), 0.0, 1.0))
             cancel = int(rng.random() < min(0.95, 0.01 + 0.80 * pd_u))
             incident = int(rng.random() < min(0.95, 0.005 + 0.45 * pd_u))
-            start_time = pd.Timedelta(hours=int(rng.integers(6, 22)), minutes=int(rng.integers(0, 59)))
+            start_time = pd.Timedelta(
+                hours=int(rng.integers(6, 22)), minutes=int(rng.integers(0, 59))
+            )
             end_time = start_time + pd.Timedelta(minutes=int(duration))
             rows.append(
                 {
@@ -166,9 +167,7 @@ def _draw_txns(
             # at the ~57 txns/user the synthesizer produces. See REPORT.md.
             late_prob = 0.001 + 0.015 * pd_u
             status = (
-                rng.choice(_BAD_STATUS)
-                if rng.random() < late_prob
-                else rng.choice(_GOOD_STATUS)
+                rng.choice(_BAD_STATUS) if rng.random() < late_prob else rng.choice(_GOOD_STATUS)
             )
             merchant_id = int(rng.integers(0, n_merchants))
             rows.append(
@@ -194,7 +193,7 @@ def generate(
     n_users: int = 10000,
     seed: int = 42,
     output_dir: str | Path = "ml/data/synthetic/",
-    anchor_end: Optional[pd.Timestamp] = None,
+    anchor_end: pd.Timestamp | None = None,
 ) -> dict[str, Path]:
     """Generate trips, txns, and demographic parquets.
 
