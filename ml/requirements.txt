@@ -1,0 +1,13 @@
+pandas>=2.2
+pyarrow>=15
+numpy>=1.26
+scikit-learn>=1.4
+tqdm>=4.66
+matplotlib>=3.8
+lightgbm>=4.3
+torch>=2.2
+networkx>=3.2
+node2vec>=0.4.6
+gensim>=4.3
+pytest>=8
+ruff>=0.5

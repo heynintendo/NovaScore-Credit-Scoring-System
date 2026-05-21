@@ -10,6 +10,9 @@ __pycache__/
 *.log
 *.sqlite
 *.db
+*.egg-info/
+build/
+dist/
 
 # Virtual envs
 .env
@@ -27,7 +30,7 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
-# Parquet/large artifacts
+# Parquet/large artifacts (synth data regenerates on demand)
 *.parquet
 *.parquett
 *.npy
@@ -43,6 +46,17 @@ data/processed/*
 *.h5
 outputs/
 artifacts/
+
+# But keep committed result artifacts and test fixtures.
+!ml/results/*.png
+!ml/results/*.json
+!ml/results/*.csv
+
+# Frontend
+node_modules/
+.next/
+.turbo/
+.vercel/
 
 # Editors
 .vscode/
