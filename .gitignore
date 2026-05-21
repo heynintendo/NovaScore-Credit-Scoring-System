@@ -51,6 +51,19 @@ artifacts/
 !ml/results/*.png
 !ml/results/*.json
 !ml/results/*.csv
+!ml/results/*.npy
+!ml/results/*.pt
+!ml/results/*.txt
+
+# Home Credit dataset (~700MB after unzip; not committed).
+ml/data/home_credit/
+
+# Phase 4.5 partial sweep archive (kept locally for reference but not committed).
+ml/results/_archive_phase4_5_synth/
+
+# Local Claude harness state + run logs.
+.claude/
+logs/
 
 # Frontend
 node_modules/

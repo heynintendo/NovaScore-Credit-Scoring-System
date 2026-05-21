@@ -1,0 +1,149 @@
+{
+  "dataset": "home_credit_default_risk",
+  "headline_test_auroc": 0.7455989209044844,
+  "ensemble_weights": {
+    "hybrid": 0.47684970627759393,
+    "lightgbm": 0.5231502937224061
+  },
+  "hybrid_best_test_auroc": 0.7252822440694948,
+  "hybrid_best_val_auroc": 0.7363582341096312,
+  "hybrid_best_config": {
+    "d_tab": 256,
+    "dropout": 0.3,
+    "lr": 0.0003
+  },
+  "lightgbm_test_auroc": 0.7450242477320963,
+  "lightgbm_val_auroc": 0.7593078657076502,
+  "lightgbm_config": {
+    "learning_rate": 0.05,
+    "num_leaves": 64,
+    "min_child_samples": 50
+  },
+  "n_users": 60000,
+  "n_train": 41998,
+  "n_val": 9002,
+  "n_test": 9000,
+  "positive_rate_full": 0.08028333333333333,
+  "score_distribution": {
+    "Bronze": 0.2,
+    "Silver": 0.2883833333333333,
+    "Gold": 0.31161666666666665,
+    "Platinum": 0.2
+  },
+  "hybrid_parameter_count": 1922177,
+  "feature_count": 80,
+  "sequence_shape": [
+    60,
+    8
+  ],
+  "seed": 42,
+  "fairness": {
+    "mitigation_attribute": "age_bucket",
+    "target_tpr": 0.8,
+    "global_threshold_before": 0.4691959113729136,
+    "thresholds": {
+      "target_tpr": 0.8,
+      "default_threshold": 0.5,
+      "thresholds": {
+        "18-25": 0.615,
+        "26-40": 0.535,
+        "41-55": 0.43,
+        "56+": 0.34
+      },
+      "achieved_tpr": {
+        "18-25": 0.8014184397163121,
+        "26-40": 0.797031863814928,
+        "41-55": 0.7987138263665595,
+        "56+": 0.8011611030478955
+      }
+    },
+    "before": [
+      {
+        "attribute": "gender",
+        "demographic_parity_ratio": 0.0,
+        "disparate_impact_ratio": 0.0,
+        "delta_tpr": 0.04617021763910989,
+        "delta_fpr": 0.29296619411123226,
+        "equalized_odds_difference": 0.29296619411123226
+      },
+      {
+        "attribute": "age_bucket",
+        "demographic_parity_ratio": 0.23743722147842003,
+        "disparate_impact_ratio": 0.23743722147842003,
+        "delta_tpr": 0.3228803178622528,
+        "delta_fpr": 0.4570891756333346,
+        "equalized_odds_difference": 0.4570891756333346
+      },
+      {
+        "attribute": "own_car",
+        "demographic_parity_ratio": 0.9306623060694538,
+        "disparate_impact_ratio": 0.9306623060694538,
+        "delta_tpr": 0.005985009869563851,
+        "delta_fpr": 0.017682787076468448,
+        "equalized_odds_difference": 0.017682787076468448
+      },
+      {
+        "attribute": "family_status",
+        "demographic_parity_ratio": 0.0,
+        "disparate_impact_ratio": 0.0,
+        "delta_tpr": 0.1874396046346828,
+        "delta_fpr": 0.31478994820640704,
+        "equalized_odds_difference": 0.31478994820640704
+      }
+    ],
+    "after": [
+      {
+        "attribute": "gender",
+        "demographic_parity_ratio": 0.0,
+        "disparate_impact_ratio": 0.0,
+        "delta_tpr": 0.04617021763910989,
+        "delta_fpr": 0.29296619411123226,
+        "equalized_odds_difference": 0.29296619411123226
+      },
+      {
+        "attribute": "age_bucket",
+        "demographic_parity_ratio": 0.7501272336196759,
+        "disparate_impact_ratio": 0.7501272336196759,
+        "delta_tpr": 0.004386575901384138,
+        "delta_fpr": 0.07205769118196678,
+        "equalized_odds_difference": 0.07205769118196678
+      },
+      {
+        "attribute": "own_car",
+        "demographic_parity_ratio": 0.9306623060694538,
+        "disparate_impact_ratio": 0.9306623060694538,
+        "delta_tpr": 0.005985009869563851,
+        "delta_fpr": 0.017682787076468448,
+        "equalized_odds_difference": 0.017682787076468448
+      },
+      {
+        "attribute": "family_status",
+        "demographic_parity_ratio": 0.0,
+        "disparate_impact_ratio": 0.0,
+        "delta_tpr": 0.1874396046346828,
+        "delta_fpr": 0.31478994820640704,
+        "equalized_odds_difference": 0.31478994820640704
+      }
+    ],
+    "tpr_before": {
+      "18-25": 0.9397163120567376,
+      "26-40": 0.8738542121344391,
+      "41-55": 0.7479099678456592,
+      "56+": 0.6168359941944848
+    },
+    "tpr_after": {
+      "18-25": 0.8014184397163121,
+      "26-40": 0.797031863814928,
+      "41-55": 0.7987138263665595,
+      "56+": 0.8011611030478955
+    },
+    "score_adjustment_per_group": {
+      "18-25": 46.10343707023774,
+      "26-40": 20.53726080625175,
+      "41-55": -12.34708386242966,
+      "56+": -42.065361357975384
+    }
+  },
+  "phase": "4.6",
+  "total_wall_seconds": 3604.5
+}

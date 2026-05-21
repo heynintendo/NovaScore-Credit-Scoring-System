@@ -39,10 +39,23 @@ from .io import (
     load_scaler,
 )
 from .models.hybrid import HybridModel
+from .home_credit_pipeline import HomeCreditConfig, run_home_credit_pipeline
+from .sweep import SweepConfig, run_phase45_pipeline
 from .train import TrainingConfig, run_training
 
 
 def _cmd_train(args: argparse.Namespace) -> int:
+    if args.dataset == "home_credit":
+        cfg = HomeCreditConfig(
+            data_dir=Path(args.data_dir) if args.data_dir != "ml/data/synthetic" else Path("ml/data/home_credit"),
+            results_dir=Path(args.results_dir),
+            seed=args.seed,
+            epochs=args.epochs,
+            sample_n=args.sample_n,
+            n_hp_trials=args.n_trials,
+        )
+        run_home_credit_pipeline(cfg)
+        return 0
     cfg = TrainingConfig(
         data_dir=Path(args.data_dir),
         results_dir=Path(args.results_dir),
@@ -53,6 +66,19 @@ def _cmd_train(args: argparse.Namespace) -> int:
         use_graph=not args.skip_graph,
     )
     run_training(cfg)
+    return 0
+
+
+def _cmd_sweep(args: argparse.Namespace) -> int:
+    cfg = SweepConfig(
+        data_dir=Path(args.data_dir),
+        results_dir=Path(args.results_dir),
+        n_users=args.n_users,
+        n_hp_trials=args.n_trials,
+        epochs=args.epochs,
+        seed=args.seed,
+    )
+    run_phase45_pipeline(cfg)
     return 0
 
 
@@ -143,9 +169,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     p_train = sub.add_parser("train", help="train end-to-end")
+    p_train.add_argument(
+        "--dataset",
+        choices=("synthetic", "home_credit"),
+        default="synthetic",
+        help="which dataset to train on (default: synthetic)",
+    )
     p_train.add_argument("--data-dir", default="ml/data/synthetic")
     p_train.add_argument("--results-dir", default="ml/results")
     p_train.add_argument("--n-users", type=int, default=10000)
+    p_train.add_argument("--sample-n", type=int, default=None, help="sample N applicants (home_credit only)")
+    p_train.add_argument("--n-trials", type=int, default=8, help="hybrid HP trials (home_credit only)")
     p_train.add_argument("--seed", type=int, default=42)
     p_train.add_argument("--epochs", type=int, default=20)
     p_train.add_argument("--skip-lightgbm", action="store_true")
@@ -155,6 +189,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_eval = sub.add_parser("evaluate", help="rebuild plots and print metrics")
     p_eval.add_argument("--results-dir", default="ml/results")
     p_eval.set_defaults(func=_cmd_evaluate)
+
+    p_sweep = sub.add_parser(
+        "sweep",
+        help="Phase 4.5 pipeline: HP sweep + LightGBM grid + ensemble + recalibrate",
+    )
+    p_sweep.add_argument("--data-dir", default="ml/data/synthetic")
+    p_sweep.add_argument("--results-dir", default="ml/results")
+    p_sweep.add_argument("--n-users", type=int, default=10000)
+    p_sweep.add_argument("--n-trials", type=int, default=15)
+    p_sweep.add_argument("--epochs", type=int, default=15)
+    p_sweep.add_argument("--seed", type=int, default=42)
+    p_sweep.set_defaults(func=_cmd_sweep)
 
     p_score = sub.add_parser("score", help="score one partner from a JSON file")
     p_score.add_argument("--input", required=True, help="path to JSON with raw features")

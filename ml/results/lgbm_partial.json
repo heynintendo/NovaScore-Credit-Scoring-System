@@ -1,0 +1,16 @@
+{
+  "stage": "phase_4.6_lightgbm_baseline_committed",
+  "dataset": "home_credit_default_risk",
+  "sample_n": 60000,
+  "n_train": 41998,
+  "n_val": 9002,
+  "n_test": 9000,
+  "best_iteration": 110,
+  "val_auc": 0.7593078657076502,
+  "test_auc": 0.7450242477320963,
+  "config": {
+    "learning_rate": 0.05,
+    "num_leaves": 64,
+    "min_child_samples": 50
+  }
+}
