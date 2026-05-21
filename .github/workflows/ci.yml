@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ml:
+    name: ml — lint + tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install ml package (editable, with dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "ml/[dev]"
+
+      - name: Ruff lint
+        run: ruff check ml/novascore ml/tests
+
+      - name: Ruff format check
+        run: ruff format --check ml/novascore ml/tests
+
+      - name: Pytest
+        env:
+          OMP_NUM_THREADS: "1"
+        run: pytest ml/tests/ -v --tb=short
+
+  api:
+    name: api — Docker build sanity
+    runs-on: ubuntu-latest
+    needs: ml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build api image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          push: false
+          load: true
+          tags: novascore-api:ci
+
+      - name: Smoke-start container + curl /api/health
+        run: |
+          docker run -d --name api -p 7860:7860 novascore-api:ci
+          # The image starts uvicorn which listens after a couple of seconds.
+          for i in {1..30}; do
+            if curl -sf http://localhost:7860/api/health > /tmp/health.json; then
+              echo "API healthy:"; cat /tmp/health.json; exit 0
+            fi
+            sleep 1
+          done
+          echo "API never became healthy. Container logs:"
+          docker logs api
+          exit 1
+
+  frontend:
+    name: frontend — typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Next.js build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: "https://example.com"
+        run: npm run build
