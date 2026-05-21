@@ -104,12 +104,14 @@ def _draw_trips(
             trip_dt = anchor_end - pd.Timedelta(days=int(d))
             duration = float(rng.lognormal(mean=2.7, sigma=0.4))  # ~ 15 min mean
             distance = float(rng.lognormal(mean=1.5, sigma=0.6))  # km
-            fare = max(0.5, distance * rng.uniform(1.2, 2.0))
-            tip = max(0.0, fare * rng.uniform(0.0, 0.15))
-            rating = float(np.clip(rng.normal(4.8 - 1.5 * pd_u, 0.25), 1.0, 5.0))
-            safety = float(np.clip(rng.normal(0.95 - 0.4 * pd_u, 0.05), 0.0, 1.0))
-            cancel = int(rng.random() < (0.04 + 0.30 * pd_u))
-            incident = int(rng.random() < (0.01 + 0.10 * pd_u))
+            # Risky drivers tip less (lower customer satisfaction) and earn less per trip.
+            fare = max(0.5, distance * rng.uniform(1.0 + 0.4 * (1 - pd_u), 2.0))
+            tip = max(0.0, fare * rng.uniform(0.0, max(0.0, 0.15 - 0.30 * pd_u)))
+            # Strong feature-PD coupling: rating drops fast with risk, cancel/incident climb.
+            rating = float(np.clip(rng.normal(5.0 - 4.0 * pd_u, 0.10), 1.0, 5.0))
+            safety = float(np.clip(rng.normal(0.99 - 1.5 * pd_u, 0.03), 0.0, 1.0))
+            cancel = int(rng.random() < min(0.95, 0.01 + 0.80 * pd_u))
+            incident = int(rng.random() < min(0.95, 0.005 + 0.45 * pd_u))
             start_time = pd.Timedelta(hours=int(rng.integers(6, 22)), minutes=int(rng.integers(0, 59)))
             end_time = start_time + pd.Timedelta(minutes=int(duration))
             rows.append(
@@ -151,7 +153,8 @@ def _draw_txns(
         if n_txns == 0:
             continue
         # Volatility ∝ pd_u (high-risk users have wider spending swings).
-        sigma_amt = 0.5 + 0.7 * pd_u
+        # High-risk users have much higher transaction-amount volatility.
+        sigma_amt = 0.4 + 1.8 * pd_u
         day_offsets = rng.integers(0, 90, size=n_txns)
         balance = float(rng.uniform(50, 5000))
         for d in day_offsets:

@@ -1,28 +1,71 @@
-"""Training loop, dataset wrapper, and group-fairness helpers used during training.
+"""Training loop, orchestration, and group-fairness helpers used during training.
 
-The training loop follows the original NovaScore deck:
+The inner training loop (`train_model`) follows the NovaScore deck:
 - AdamW(lr=3e-4, weight_decay=1e-4)
 - Cosine annealing over `epochs`
 - BCEWithLogitsLoss
 - Early stopping on validation AUROC (patience=5)
 - Mixed precision (AMP) on CUDA, fp32 on CPU
 - Best validation checkpoint is restored before returning.
+
+The outer orchestrator (`run_training`) wires synthesizer → preprocessing →
+feature engineering → LightGBM baseline → hybrid training → calibration →
+artifact persistence. See `ml/results/` after a run for everything it produces.
 """
 
 from __future__ import annotations
 
 import copy
-from typing import Optional
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Optional
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader, Dataset
 
+from . import GRAPH_DIM, SEQ_FEATURES, T_WEEKS
+from .calibration import (
+    CalibrationParams,
+    apply_calibration,
+    empirical_refinement,
+    solve_score_params,
+)
+from .data.preprocessing import (
+    apply_window,
+    compute_labels,
+    compute_tabular_features,
+    compute_user_city_group,
+    load_parquets,
+    parse_datetimes,
+)
+from .data.sequences import build_sequences
+from .data.synthesize import generate as generate_synth
+from .io import (
+    save_calibration,
+    save_checkpoint,
+    save_json,
+    save_scaler,
+    save_sequence_scaler,
+)
 from .models.hybrid import HybridModel
+from .models.lightgbm_baseline import (
+    feature_importance as lgb_feature_importance,
+)
+from .models.lightgbm_baseline import (
+    score_lightgbm,
+    test_auroc as lgb_test_auroc,
+    train_lightgbm,
+)
+from .models.node2vec_embed import compute_user_embeddings
 
 
 class NovaDS(Dataset):
@@ -175,3 +218,227 @@ def delta_tpr_at_threshold(
         return 0.0
     diffs = [abs(a - b) for i, a in enumerate(tprs) for b in tprs[i + 1 :]]
     return float(np.mean(diffs))
+
+
+@dataclass
+class TrainingConfig:
+    """Top-level config for `run_training`. Defaults match the deck spec."""
+
+    data_dir: Path = field(default_factory=lambda: Path("ml/data/synthetic"))
+    results_dir: Path = field(default_factory=lambda: Path("ml/results"))
+    n_users: int = 10000
+    seed: int = 42
+    epochs: int = 20
+    lr: float = 3e-4
+    weight_decay: float = 1e-4
+    patience: int = 5
+    batch_size: int = 512
+    test_size: float = 0.15
+    val_size: float = 0.1765  # fraction of train+val pool used as val
+    use_graph: bool = True
+    device: Optional[str] = None
+    skip_lightgbm: bool = False
+
+    def __post_init__(self) -> None:
+        self.data_dir = Path(self.data_dir)
+        self.results_dir = Path(self.results_dir)
+
+
+def _stratify(y: np.ndarray, min_per_class: int = 2) -> Optional[np.ndarray]:
+    vals, cnts = np.unique(y, return_counts=True)
+    if len(vals) < 2 or cnts.min() < min_per_class:
+        return None
+    return y
+
+
+def _ensure_synth(data_dir: Path, n_users: int, seed: int) -> None:
+    """Generate synthetic parquets at data_dir if either trips or txns is missing."""
+    trips = data_dir / "trips.parquet"
+    txns = data_dir / "txns.parquet"
+    if trips.exists() and txns.exists():
+        return
+    print(f"[data] synthetic parquets missing at {data_dir} — generating n_users={n_users}")
+    generate_synth(n_users=n_users, seed=seed, output_dir=data_dir)
+
+
+def run_training(cfg: TrainingConfig) -> dict[str, Any]:
+    """End-to-end training pipeline. Persists all artifacts to cfg.results_dir."""
+    device = cfg.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    cfg.results_dir.mkdir(parents=True, exist_ok=True)
+
+    _ensure_synth(cfg.data_dir, cfg.n_users, cfg.seed)
+    print(f"[data] loading parquets from {cfg.data_dir}")
+    trips, txns = load_parquets(cfg.data_dir / "trips.parquet", cfg.data_dir / "txns.parquet")
+    trips, txns = parse_datetimes(trips, txns)
+    trips_w, txns_w, anchor_end = apply_window(trips, txns)
+    print(f"[data] window rows -> trips: {len(trips_w):,}  txns: {len(txns_w):,}")
+
+    labels = compute_labels(txns_w)
+    print(f"[data] positive rate: {labels['y'].mean():.3f}")
+
+    tab, learned_topk = compute_tabular_features(trips_w, txns_w)
+    feature_columns = [c for c in tab.columns if c != "user_id"]
+
+    users = pd.DataFrame({"user_id": sorted(set(tab["user_id"]) | set(labels["user_id"]))})
+    users = users.merge(labels, on="user_id", how="left").fillna({"y": 0})
+    users["y"] = users["y"].astype(int)
+    users = users.merge(
+        compute_user_city_group(txns_w, users["user_id"], top_k=10),
+        on="user_id",
+        how="left",
+    )
+    users["city_grp"] = users["city_grp"].fillna("other")
+
+    # Align tabular features to user_index order; fill missing rows with zeros.
+    tab_indexed = users[["user_id"]].merge(tab, on="user_id", how="left").fillna(0.0)
+    X_tab_raw = tab_indexed[feature_columns].astype("float32").to_numpy()
+
+    print(f"[seq] building weekly sequences ({T_WEEKS} weeks x {len(SEQ_FEATURES)} features)")
+    X_seq, seq_scaler = build_sequences(trips_w, txns_w, users["user_id"], anchor_end, T_WEEKS)
+
+    if cfg.use_graph:
+        print("[graph] computing Node2Vec embeddings on user-merchant graph")
+        X_graph = compute_user_embeddings(txns_w, users["user_id"], dim=GRAPH_DIM, seed=cfg.seed)
+    else:
+        X_graph = np.zeros((len(users), GRAPH_DIM), dtype="float32")
+
+    scaler = StandardScaler()
+    X_tab = scaler.fit_transform(X_tab_raw).astype("float32")
+    y = users["y"].to_numpy().astype("int64")
+    grp_cat = users["city_grp"].astype("category")
+    group_codes = grp_cat.cat.codes.to_numpy()
+    group_categories = grp_cat.cat.categories.tolist()
+
+    idx = np.arange(len(users))
+    tr_idx, te_idx = train_test_split(
+        idx, test_size=cfg.test_size, random_state=cfg.seed, shuffle=True, stratify=_stratify(y)
+    )
+    tr_idx, va_idx = train_test_split(
+        tr_idx,
+        test_size=cfg.val_size,
+        random_state=cfg.seed,
+        shuffle=True,
+        stratify=_stratify(y[tr_idx]),
+    )
+    print(f"[split] train={len(tr_idx)} val={len(va_idx)} test={len(te_idx)}")
+
+    # LightGBM baseline on tabular features only.
+    booster = None
+    p_te_lgb: Optional[np.ndarray] = None
+    lgb_info: dict[str, Any] = {}
+    if not cfg.skip_lightgbm:
+        print("[lgbm] training baseline")
+        booster, lgb_info = train_lightgbm(
+            X_tab[tr_idx], y[tr_idx], X_tab[va_idx], y[va_idx]
+        )
+        p_te_lgb = score_lightgbm(booster, X_tab[te_idx])
+        lgb_info["test_auc"] = lgb_test_auroc(booster, X_tab[te_idx], y[te_idx])
+        print(
+            f"[lgbm] best_iter={lgb_info['best_iteration']} "
+            f"val_auc={lgb_info['val_auc']:.4f} test_auc={lgb_info['test_auc']:.4f}"
+        )
+
+    # Hybrid model training.
+    print("[hybrid] training")
+    tr_ds = NovaDS(X_tab[tr_idx], X_seq[tr_idx], X_graph[tr_idx], y[tr_idx], group_codes[tr_idx])
+    va_ds = NovaDS(X_tab[va_idx], X_seq[va_idx], X_graph[va_idx], y[va_idx], group_codes[va_idx])
+    te_ds = NovaDS(X_tab[te_idx], X_seq[te_idx], X_graph[te_idx], y[te_idx], group_codes[te_idx])
+    tr_loader = DataLoader(tr_ds, batch_size=cfg.batch_size, shuffle=True)
+    va_loader = DataLoader(va_ds, batch_size=cfg.batch_size, shuffle=False)
+    te_loader = DataLoader(te_ds, batch_size=cfg.batch_size, shuffle=False)
+    model = train_model(
+        tr_loader,
+        va_loader,
+        n_tab=X_tab.shape[1],
+        n_seq_features=len(SEQ_FEATURES),
+        g_dim=GRAPH_DIM,
+        epochs=cfg.epochs,
+        lr=cfg.lr,
+        weight_decay=cfg.weight_decay,
+        patience=cfg.patience,
+        device=device,
+    )
+
+    # Test predictions (hybrid).
+    test_auc, y_te, p_te = _val_auroc(model, te_loader, device)
+    dtpr = delta_tpr_at_threshold(y_te, p_te, group_codes[te_idx], thr=0.5)
+    print(f"[hybrid] test AUROC={test_auc:.4f}  ΔTPR={dtpr:.4f}")
+
+    # Calibration (analytical + empirical refinement against full-population PDs).
+    A, B = solve_score_params()
+    full_ds = NovaDS(X_tab, X_seq, X_graph, y, group_codes)
+    full_loader = DataLoader(full_ds, batch_size=cfg.batch_size, shuffle=False)
+    _, _, all_p = _val_auroc(model, full_loader, device)
+    a, b = empirical_refinement(all_p, A, B, q_low=0.20, q_high=0.80)
+    calib = CalibrationParams(A=A, B=B, a=a, b=b)
+    all_scores = apply_calibration(all_p, calib)
+
+    # Persist artifacts.
+    rd = cfg.results_dir
+    n_params = int(sum(p.numel() for p in model.parameters()))
+    save_checkpoint(
+        model,
+        rd / "checkpoint.pt",
+        hparams={
+            "n_tab": int(X_tab.shape[1]),
+            "d_tab": 256,
+            "d_seq": 128,
+            "g_dim": GRAPH_DIM,
+            "n_seq_features": len(SEQ_FEATURES),
+        },
+    )
+    save_json(rd / "feature_columns.json", feature_columns)
+    save_json(rd / "topk.json", learned_topk)
+    save_json(rd / "group_categories.json", group_categories)
+    save_sequence_scaler(rd / "sequence_scaler.json", seq_scaler)
+    save_scaler(rd / "scaler.json", scaler.mean_, scaler.scale_)
+    save_calibration(rd / "calibration.json", calib)
+    if booster is not None:
+        booster.save_model(str(rd / "lightgbm.txt"))
+        save_json(
+            rd / "feature_importance.json",
+            lgb_feature_importance(booster, feature_columns),
+        )
+
+    test_pred_df = pd.DataFrame(
+        {
+            "user_id": users["user_id"].to_numpy()[te_idx],
+            "y_true": y_te.astype(int),
+            "pd90": p_te,
+            "novascore": np.round(apply_calibration(p_te, calib), 1),
+            "group": pd.Categorical.from_codes(
+                group_codes[te_idx], categories=group_categories
+            ).astype(str),
+        }
+    )
+    test_pred_df.to_csv(rd / "test_predictions.csv", index=False)
+    np.save(rd / "all_probs.npy", all_p)
+    np.save(rd / "all_scores.npy", all_scores)
+    if p_te_lgb is not None:
+        np.save(rd / "test_probs_lightgbm.npy", p_te_lgb)
+
+    metrics = {
+        "hybrid_test_auroc": float(test_auc),
+        "hybrid_delta_tpr_at_0.5": float(dtpr),
+        "lightgbm_test_auroc": float(lgb_info.get("test_auc", float("nan"))),
+        "n_users": int(len(users)),
+        "n_train": int(len(tr_idx)),
+        "n_val": int(len(va_idx)),
+        "n_test": int(len(te_idx)),
+        "positive_rate_full": float(np.mean(y)),
+        "positive_rate_test": float(np.mean(y_te)),
+        "score_distribution": {
+            "Bronze": float((all_scores < 600).mean()),
+            "Silver": float(((all_scores >= 600) & (all_scores < 700)).mean()),
+            "Gold": float(((all_scores >= 700) & (all_scores < 800)).mean()),
+            "Platinum": float((all_scores >= 800).mean()),
+        },
+        "hybrid_parameter_count": n_params,
+        "feature_count": int(X_tab.shape[1]),
+        "seed": int(cfg.seed),
+        "epochs_config": int(cfg.epochs),
+    }
+    save_json(rd / "metrics.json", metrics)
+    print(f"[done] artifacts written to {rd}")
+    print(json.dumps(metrics, indent=2))
+    return metrics
