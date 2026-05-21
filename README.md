@@ -53,8 +53,8 @@ back down to the target and pulls older applicants up (their TPR rose from
 | Band | Range | Share | Policy |
 |------|-------|------:|--------|
 | Platinum | 800–950 | 20.0% | Auto-approve, large limit |
-| Gold | 700–799 | 31.2% | Standard approve, medium limit |
-| Silver | 600–699 | 28.8% | Manual review, repayment coaching |
+| Gold | 700–799 | 28.8% | Standard approve, medium limit |
+| Silver | 600–699 | 31.2% | Manual review, repayment coaching |
 | Bronze | <600 | 20.0% | Decline, saving plans |
 
 Plots: `ml/results/roc_curve.png`, `calibration_plot.png`,

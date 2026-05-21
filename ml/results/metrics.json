@@ -26,8 +26,8 @@
   "positive_rate_full": 0.08028333333333333,
   "score_distribution": {
     "Bronze": 0.2,
-    "Silver": 0.2883833333333333,
-    "Gold": 0.31161666666666665,
+    "Silver": 0.31161666666666665,
+    "Gold": 0.2883833333333333,
     "Platinum": 0.2
   },
   "hybrid_parameter_count": 1922177,
@@ -145,5 +145,6 @@
     }
   },
   "phase": "4.6",
-  "total_wall_seconds": 3604.5
+  "total_wall_seconds": 3604.5,
+  "recalibrated": true
 }

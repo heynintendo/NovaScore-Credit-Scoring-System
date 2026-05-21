@@ -200,11 +200,21 @@ to score 600/800; final params committed to `ml/results/calibration.json`.
 
 **Decision-band distribution on full 60K sample**:
 - Platinum (≥800): 20.0%
-- Gold (700–799): 31.2%
-- Silver (600–699): 28.8%
+- Gold (700–799): 28.8%
+- Silver (600–699): 31.2%
 - Bronze (<600): 20.0%
 
 A well-spread distribution; no pathological collapse into one band.
+
+**Calibration-direction bug fix** (recalibrated post-Phase 4.6): the original
+empirical-refinement function in `ml/novascore/calibration.py` had its targets
+swapped (`q_low` mapped to `logit(p600)` instead of `logit(p800)`), inverting
+the PD → score direction. Symptom: high-PD applicants were getting score 950
+and low-PD applicants score ~430. The model itself was unaffected; only the
+post-hoc PD → score map was wrong. Fixed in commit following the Phase 4.6
+landing; the saved `all_probs.npy` was re-calibrated in place via
+`ml/scripts/recalibrate.py` (no retraining needed). Sanity check: lowest-PD
+test applicant → 902, highest-PD → 432.
 
 ## 4. Fairness analysis
 

@@ -80,20 +80,27 @@ def empirical_refinement(
 ) -> tuple[float, float]:
     """Compute (a, b) so the rescaled-logit PD distribution spreads to [600, 800].
 
-    Maps the empirical q_low quantile of `probs` to the PD at score=600 and the
-    q_high quantile to the PD at score=800, in logit space.
+    The mapping anchors the *low* tail of the model's predicted PDs (good
+    applicants) to the PD that yields score 800, and the *high* tail (risky
+    applicants) to the PD that yields score 600. Concretely:
+
+        rescaled_logit(q_low)  := logit(p800)   # 20th-percentile PD → score 800
+        rescaled_logit(q_high) := logit(p600)   # 80th-percentile PD → score 600
+
+    Returns the (a, b) of the linear logit-space transform.
     """
-    p600 = float(_inv_logit(np.array((A - 600) / B)))
-    p800 = float(_inv_logit(np.array((A - 800) / B)))
+    p600 = float(_inv_logit(np.array((A - 600) / B)))  # high PD anchor
+    p800 = float(_inv_logit(np.array((A - 800) / B)))  # low PD anchor
     q_lo = float(np.quantile(probs, q_low))
     q_hi = float(np.quantile(probs, q_high))
     u_lo, u_hi = _logit(np.array(q_lo)), _logit(np.array(q_hi))
-    v_lo, v_hi = _logit(np.array(p600)), _logit(np.array(p800))
+    v_target_lo = _logit(np.array(p800))  # low PD quantile → maps to score-800 PD
+    v_target_hi = _logit(np.array(p600))  # high PD quantile → maps to score-600 PD
     den = float(u_hi - u_lo)
     if abs(den) < 1e-8:
-        return 1.0, float(v_lo - u_lo)
-    a = float((v_hi - v_lo) / den)
-    b = float(v_lo - a * u_lo)
+        return 1.0, float(v_target_lo - u_lo)
+    a = float((v_target_hi - v_target_lo) / den)
+    b = float(v_target_lo - a * u_lo)
     return a, b
 
 
