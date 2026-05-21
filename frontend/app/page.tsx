@@ -20,7 +20,8 @@ export default function LandingPage() {
             Equitable Credit Scoring · v0.2 · Home Credit Default Risk
           </motion.p>
 
-          {/* H1 stack */}
+          {/* H1 stack — tagline is a sibling, not nested, so it does not inherit
+              the H1's -0.03em letter-spacing or font-bold weight. */}
           <div className="col-span-12 lg:col-span-9">
             <motion.h1
               initial={{ opacity: 0, y: 14 }}
@@ -29,10 +30,23 @@ export default function LandingPage() {
               className="font-display text-[clamp(3.5rem,9vw,7rem)] font-bold leading-[0.95] text-cream"
             >
               Nova<span className="text-gold">Score</span>
-              <span className="block font-display text-[clamp(1.25rem,2.4vw,2rem)] font-normal italic leading-snug text-cream/85 mt-6 max-w-[40ch] text-balance">
-                Respecting those who carry trust, with credit that carries them.
-              </span>
             </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1], delay: 0.14 }}
+              className="font-display italic text-cream/85 mt-6 max-w-[40ch] text-pretty"
+              style={{
+                fontSize: "clamp(1.125rem, 2vw, 1.625rem)",
+                fontWeight: 400,
+                lineHeight: 1.4,
+                letterSpacing: "0.01em",
+                wordSpacing: "normal",
+                fontFeatureSettings: '"liga" 1, "dlig" 0, "ss01" 0',
+              }}
+            >
+              Respecting those who carry trust, with credit that carries them.
+            </motion.p>
           </div>
 
           {/* Subtext — asymmetric, sits to the right of hero, aligns to bottom */}
