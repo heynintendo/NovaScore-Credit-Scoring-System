@@ -244,7 +244,7 @@ novascore sweep --n-trials 15 --n-users 10000
 ## Credits
 
 - **Anupam Kumar**
-- **Anish Kishore** — primary contributor: completed the broken ML pipeline,
+- **Anish Kishore** — completed the broken ML pipeline,
   built the FastAPI backend, built the Next.js frontend, ran the dataset
   pivot and the headline benchmarking
 - **Swaraj Thakur**
