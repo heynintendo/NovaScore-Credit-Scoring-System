@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+@theme {
+  /* Core palette — dark editorial */
+  --color-midnight: #0A1628;
+  --color-midnight-elevated: #0F1B2C;
+  --color-midnight-border: rgba(255, 255, 255, 0.06);
+  --color-cream: #E8DCC4;
+  --color-cream-muted: rgba(232, 220, 196, 0.65);
+  --color-cream-faint: rgba(232, 220, 196, 0.35);
+  --color-gold: #C9A26F;
+  --color-gold-hover: #D4B47A;
+
+  /* Decision tier colors — used sparingly */
+  --color-tier-platinum: #C9A26F;
+  --color-tier-gold: #D4B47A;
+  --color-tier-silver: #A8A8B3;
+  --color-tier-bronze: #8B6B4A;
+  --color-tier-decline: #7A4848;
+
+  /* Typography */
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-body: "Geist Sans", ui-sans-serif, system-ui;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    background-color: var(--color-midnight);
+    color: var(--color-cream);
+    font-family: var(--font-body);
+    font-feature-settings: "ss01", "cv01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-image:
+      radial-gradient(ellipse at 20% -10%, rgba(201, 162, 111, 0.07), transparent 55%),
+      radial-gradient(ellipse at 80% 110%, rgba(168, 168, 179, 0.04), transparent 50%);
+    background-attachment: fixed;
+  }
+
+  /* The display serif uses Fraunces's variable axes for optical sizing
+     and a soft hint of weight variation between hero and h2. */
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 144;
+    letter-spacing: -0.02em;
+  }
+  h1 { letter-spacing: -0.03em; }
+
+  ::selection {
+    background: rgba(201, 162, 111, 0.35);
+    color: var(--color-cream);
+  }
+
+  /* A subtle film grain — gives the dark palette depth so it doesn't read flat. */
+  body::after {
+    content: "";
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.91 0 0 0 0 0.86 0 0 0 0 0.77 0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  .focus-ring {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(201, 162, 111, 0.35);
+    border-color: var(--color-gold);
+  }
+  /* Tracked-out small caps for technical labels. */
+  .label-mono {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-cream-muted);
+  }
+  .label-mono-faint {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-cream-faint);
+  }
+  /* Selective glassmorphism — only used on nav (scrolled) and the gauge container. */
+  .glass-warm {
+    background: linear-gradient(
+      155deg,
+      rgba(15, 27, 44, 0.55),
+      rgba(15, 27, 44, 0.35)
+    );
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(201, 162, 111, 0.18);
+    box-shadow:
+      0 24px 60px -28px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  .surface-edge {
+    background-color: var(--color-midnight-elevated);
+    border: 1px solid var(--color-midnight-border);
+  }
+}
