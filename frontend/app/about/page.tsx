@@ -121,8 +121,7 @@ export default function AboutPage() {
 
         <Section eyebrow="08" title="Credits">
           <p className="text-cream">
-            Anupam Kumar · <Hi>Anish Kishore (primary contributor)</Hi> ·
-            Swaraj Thakur
+            Anish Kishore
           </p>
           <p className="mt-2 text-sm text-cream-muted">
             BIT Mesra. Originally a Grab AI National Hackathon 2025

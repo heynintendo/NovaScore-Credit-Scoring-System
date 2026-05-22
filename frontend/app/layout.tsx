@@ -47,7 +47,7 @@ export default function RootLayout({
               <div>
                 <p className="label-mono text-cream-muted">NovaScore · v0.2 · BIT Mesra</p>
                 <p className="mt-3 text-sm text-cream-muted">
-                  Built by Anupam Kumar, Anish Kishore, Swaraj Thakur.
+                  Built by Anish Kishore.
                 </p>
               </div>
               <a
